@@ -44,7 +44,7 @@ function autoSubmit() {
 
   while (true) {
     let randomPageIndex = 1 + Math.floor(Math.random() * 19); // 1から19のページ番号をランダムに生成
-    console.log('page no. ' + randomPageIndex);
+    Logger.log('page no. ' + randomPageIndex);
 
     // APIリクエストURLを使用してLomographyから写真データを取得
     let response = UrlFetchApp.fetch(`http://api.lomography.com/v1/photos/selected?page=${randomPageIndex}&api_key=${lomographyApiKey}`);
@@ -54,7 +54,7 @@ function autoSubmit() {
 
     // 0から19までのランダムな整数を生成
     randomPhotoIndex = Math.floor(Math.random() * 19);
-    console.log('photo no. ' + randomPhotoIndex);
+    Logger.log('photo no. ' + randomPhotoIndex);
 
     // 写真のIDを取得
     photoId = responseData["photos"][randomPhotoIndex]["id"];
@@ -67,7 +67,26 @@ function autoSubmit() {
 
   // 写真ページのHTMLを取得し、写真のURLを抽出
   let photoHtml = UrlFetchApp.fetch(responseData["photos"][randomPhotoIndex]["url"]).getContentText('UTF-8');
-  let photoImgUrl = Parser.data(photoHtml).from('<img src="').to('"').iterate();
+  
+  // `src="` で分割
+  let parts = photoHtml.split('src="');
+  let photoImgUrl = null;
+
+  for (let i = 1; i < parts.length; i++) {
+    let previousText = parts[i - 1]; // src=の前の部分
+    if (previousText.endsWith('<img ') || previousText.endsWith('2x" ')) {
+      photoImgUrl = parts[i].split('"')[0]; // 最初の `"` までを取得
+      break;
+    }
+  }
+
+  if (!photoImgUrl) {
+    Logger.log("画像URLが見つかりませんでした。処理を中止します。");
+    return;
+  }
+
+  Logger.log("画像URL: " + photoImgUrl);
+  
   let photoTitle = responseData["photos"][randomPhotoIndex]["title"] || ""; // タイトルを取得
   let photoDescription = responseData["photos"][randomPhotoIndex]["description"] || ""; // 説明を取得
   let photoUrl = responseData["photos"][randomPhotoIndex]["url"]; // URLを取得
@@ -98,8 +117,8 @@ function autoSubmit() {
     }
   };
   let imageUploadResponse = JSON.parse(twitterService.fetch(mediaUploadEndpoint, imageUploadOptions));
-  console.log(imageUploadResponse);
-  console.log(imageUploadResponse["media_id_string"]);
+  Logger.log(imageUploadResponse);
+  Logger.log(imageUploadResponse["media_id_string"]);
 
   // 代替テキストの設定
   let altTextComponents = [];
@@ -140,21 +159,11 @@ function autoSubmit() {
 
   // スプレッドシートにデータを記録
   let currentDate = new Date();
-  Logger.log(Utilities.formatDate(currentDate, 'Asia/Tokyo', 'yyyy/MM/dd hh:mm:ss'));
-
-  // スプレッドシートに追加する写真データを作成
-  let photoData = [
-    photoId, // A列
-    photoTitle, // B列
-    photoDescription, // C列
-    photoUrl, // D列
-    responseData["photos"][randomPhotoIndex]["asset_ratio"], // E列
-    currentDate, // F列
-    tweetResult.data.id // G列
-  ];
-
-  // スプレッドシートIDをプロパティから取得
-  const spreadsheetId = getScriptProperty('SPREADSHEET_ID');
+  let spreadsheetId = getScriptProperty('SPREADSHEET_ID');
   let sheet = SpreadsheetApp.openById(spreadsheetId).getSheetByName("List");
-  sheet.appendRow(photoData); // データをスプレッドシートに追加
+  sheet.appendRow([
+    photoId, photoTitle, photoDescription, photoUrl, 
+    responseData["photos"][randomPhotoIndex]["asset_ratio"], 
+    currentDate, tweetResult.data.id
+  ]);
 }
